@@ -13,6 +13,7 @@ import (
 	"github.com/oomph-ac/oomph/player/context"
 	"github.com/oomph-ac/oomph/utils"
 	oworld "github.com/oomph-ac/oomph/world"
+	"github.com/sandertv/gophertunnel/minecraft"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
@@ -95,7 +96,6 @@ func (p *Player) HandleClientPacket(ctx *context.HandlePacketContext) {
 		}
 	case *packet.PlayerAuthInput:
 		if !p.movement.InputAcceptable() {
-			p.Popup("<red>input rate-limited (%d)</red>", p.SimulationFrame)
 			p.tryRunningClientCombat(pk)
 			ctx.Cancel()
 			return
@@ -339,10 +339,11 @@ func (p *Player) HandleServerPacket(ctx *context.HandlePacketContext) {
 			if !ok {
 				dim = world.Overworld
 			}
-			if c, err := chunk.NetworkDecode(oworld.AirRuntimeID, pk.RawPayload, int(pk.SubChunkCount), dim.Range()); err != nil {
+			chunkEncoder := minecraft.NopChunkEncoder{}
+			if c, err := chunk.NetworkDecode(oworld.AirRuntimeID, pk.RawPayload, int(pk.SubChunkCount), dim.Range(), chunkEncoder); err != nil {
 				p.Log().Warn("unable to decode chunk", "error", err)
 			} else {
-				data := chunk.Encode(c, chunk.NetworkEncoding)
+				data := chunk.Encode(c, chunk.NetworkEncoding, chunkEncoder)
 				chunkBuf := bytes.NewBuffer(nil)
 				for _, sub := range data.SubChunks {
 					chunkBuf.Write(sub)

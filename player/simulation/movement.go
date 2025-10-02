@@ -257,6 +257,9 @@ func walkOnBlock(movement player.MovementComponent, blockUnder world.Block) {
 }
 
 func simulationIsReliable(p *player.Player, movement player.MovementComponent) bool {
+	if p.State.Get() != player.StatePlaying {
+		return false
+	}
 	if movement.RemainingTeleportTicks() > 0 {
 		return true
 	}

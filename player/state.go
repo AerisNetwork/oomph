@@ -1,13 +1,33 @@
 package player
 
-import "time"
+import "sync/atomic"
 
-type MonitoringState struct {
-	// IsReplay is set to true if the current player's actions are being replayed.
-	IsReplay bool
-	// IsRecording is set to true if the current player's actions are being recorded.
-	// IsReplay must be set to false if this is set to true.
-	IsRecording bool
-	// CurrentTime is the current time of the player. This is used primarily for support of replays.
-	CurrentTime time.Time
+// StateType ...
+type StateType uint8
+
+const (
+	StateNeutral StateType = iota
+	StatePlaying
+)
+
+// State ...
+type State struct {
+	current atomic.Value
+}
+
+// NewState ...
+func NewState() *State {
+	st := &State{}
+	st.current.Store(StateNeutral)
+	return st
+}
+
+// Set ...
+func (s *State) Set(st StateType) {
+	s.current.Store(st)
+}
+
+// Get ...
+func (s *State) Get() StateType {
+	return s.current.Load().(StateType)
 }

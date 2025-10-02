@@ -8,6 +8,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/df-mc/dragonfly/server/world/chunk"
+	"github.com/sandertv/gophertunnel/minecraft"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 	"github.com/zeebo/xxh3"
@@ -93,6 +94,7 @@ func CacheChunk(input *packet.LevelChunk) (ChunkInfo, error) {
 		input.RawPayload,
 		int(input.SubChunkCount),
 		dimension.Range(),
+		minecraft.NopChunkEncoder{},
 	)
 	if err != nil {
 		return ChunkInfo{}, err

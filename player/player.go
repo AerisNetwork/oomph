@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net"
 	"sync"
 	"time"
 
@@ -51,6 +50,7 @@ const (
 )
 
 type Player struct {
+	State  *State
 	MState MonitoringState
 
 	Ready  bool
@@ -137,9 +137,6 @@ type Player struct {
 
 	world *world.World
 
-	// listener is the Gophertunnel listener
-	listener *minecraft.Listener
-
 	// procMu is a mutex that is locked whenever packets need to be processed. It is used to
 	// prevent race conditions, and to maintain accuracy with anti-cheat.
 	// e.g - making sure all acknowledgements are sent in the same batch as the packets they are
@@ -211,9 +208,10 @@ type Player struct {
 }
 
 // New creates and returns a new Player instance.
-func New(log *slog.Logger, mState MonitoringState, listener *minecraft.Listener) *Player {
+func New(state *State, log *slog.Logger) *Player {
 	p := &Player{
-		MState: mState,
+		State:  state,
+		MState: MonitoringState{},
 
 		ReceiveAlerts: true,
 		AlertDelay:    0,
@@ -240,8 +238,6 @@ func New(log *slog.Logger, mState MonitoringState, listener *minecraft.Listener)
 
 		log: log,
 
-		listener: listener,
-
 		remoteEventFunc: func(e RemoteEvent, p *Player) {
 			enc, _ := json.Marshal(e)
 			p.SendPacketToServer(&packet.ScriptMessage{
@@ -249,9 +245,6 @@ func New(log *slog.Logger, mState MonitoringState, listener *minecraft.Listener)
 				Data:       enc,
 			})
 		},
-	}
-	if mState.IsReplay {
-		p.LastServerTick = mState.CurrentTime
 	}
 
 	p.opts = new(Opts)
@@ -435,15 +428,9 @@ func (p *Player) Disconnect(reason string) {
 	p.SendPacketToClient(&packet.Disconnect{
 		Message:         reason,
 		FilteredMessage: reason,
-		Reason:          packet.DisconnectReasonKicked,
+		Reason:          utils.DisconnectReasonKicked,
 	})
 	p.Close()
-}
-
-func (p *Player) BlockAddress(duration time.Duration) {
-	if rkListener, ok := utils.GetRaknetListener(p.listener); ok {
-		utils.BlockAddress(rkListener, p.RemoteAddr().(*net.UDPAddr).IP, duration)
-	}
 }
 
 func (p *Player) IsVersion(ver int32) bool {
