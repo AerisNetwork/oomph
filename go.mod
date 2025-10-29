@@ -1,6 +1,6 @@
 module github.com/oomph-ac/oomph
 
-go 1.24.1
+go 1.25
 
 require (
 	github.com/chewxy/math32 v1.10.1
@@ -10,12 +10,13 @@ require (
 	github.com/go-gl/mathgl v1.2.0
 	github.com/oomph-ac/oconfig v0.0.0-20250912013507-a80d378a6595
 	github.com/sandertv/go-raknet v1.14.3-0.20250525005230-991ee492a907
-	github.com/sandertv/gophertunnel v1.50.0
+	github.com/sandertv/gophertunnel v1.50.1
 	github.com/zeebo/xxh3 v1.0.2
 	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc
 )
 
 require (
+	github.com/aerisnetwork/translate v1.0.0 // indirect
 	github.com/brentp/intintmap v0.0.0-20190211203843-30dc0ade9af9 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/df-mc/goleveldb v1.1.9 // indirect
@@ -32,11 +33,11 @@ require (
 	golang.org/x/crypto v0.41.0 // indirect
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 )
 
 replace github.com/sandertv/go-raknet => github.com/aerisnetwork/aeris-raknet v0.1.4-0.20250925123415-b8375fdd26f7
 
-replace github.com/sandertv/gophertunnel => github.com/aerisnetwork/aeris-gophertunnel v0.5.0
+replace github.com/sandertv/gophertunnel => github.com/aerisnetwork/aeris-gophertunnel v0.5.4-0.20251029153648-1307bb3caec3
 
-replace github.com/df-mc/dragonfly => github.com/aerisnetwork/dragonfly v0.0.0-20251002160153-6d4f969e87df
+replace github.com/df-mc/dragonfly => github.com/aerisnetwork/dragonfly v0.0.0-20251029155301-824e9065d9db

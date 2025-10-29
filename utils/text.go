@@ -49,8 +49,6 @@ func InputMode(mode int) string {
 		return "Touch"
 	case packet.InputModeGamePad:
 		return "Gamepad"
-	case packet.InputModeMotionController:
-		return "Motion Controller"
 	}
 
 	return "Unknown"
