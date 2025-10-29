@@ -63,8 +63,8 @@ func (d *EditionFakerC) Metadata() *player.DetectionMetadata {
 
 func (d *EditionFakerC) Detect(pk packet.Packet) {
 	if i, ok := pk.(*packet.PlayerAuthInput); ok {
-		// There is no input mode after motion controller or before mouse.
-		if i.InputMode > packet.InputModeMotionController || i.InputMode < packet.InputModeMouse {
+		// There is no input mode after game pad or before mouse.
+		if i.InputMode > packet.InputModeGamePad || i.InputMode < packet.InputModeMouse {
 			data := orderedmap.NewOrderedMap[string, any]()
 			data.Set("inputMode", i.InputMode)
 			d.mPlayer.FailDetection(d, data)
