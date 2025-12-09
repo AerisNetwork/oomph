@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"iter"
 	"math"
 	_ "unsafe"
 
@@ -19,8 +20,26 @@ type BlockSearchResult struct {
 	Position cube.Pos
 }
 
+var (
+	blockNameMapping = map[uint64]string{}
+)
+
+func InitializeBlockNameMapping() {
+	blockNameMapping = make(map[uint64]string, len(world.Blocks()))
+	for _, b := range world.Blocks() {
+		if x, y := b.Hash(); x == 0 && y == math.MaxUint64 {
+			continue
+		}
+		name, _ := b.EncodeBlock()
+		blockNameMapping[world.BlockHash(b)] = name
+	}
+}
+
 // BlockName returns the name of the block.
 func BlockName(b world.Block) string {
+	if n, ok := blockNameMapping[world.BlockHash(b)]; ok {
+		return n
+	}
 	n, _ := b.EncodeBlock()
 	return n
 }
@@ -67,17 +86,22 @@ func OneWayCollisionBlocks(blocks []BlockSearchResult) []world.Block {
 
 // BlockBoxes returns the bounding boxes of the given block based on it's name.
 func BlockBoxes(b world.Block, pos cube.Pos, src world.BlockSource) []cube.BBox {
+	const (
+		sixteenth float32 = 1.0 / 16.0
+		eighth    float32 = 1.0 / 8.0
+	)
+
 	switch BlockName(b) {
 	case "minecraft:portal", "minecraft:end_portal":
 		return []cube.BBox{}
 	case "minecraft:web":
 		return []cube.BBox{cube.Box(0, 0, 0, 1, 1, 1)}
 	case "minecraft:bed":
-		return []cube.BBox{cube.Box(1.0/16.0, 0, 1.0/16.0, 15.0/16.0, 9.0/16.0, 15.0/16.0)}
+		return []cube.BBox{cube.Box(sixteenth, 0, sixteenth, 15*sixteenth, 9*sixteenth, 15*sixteenth)}
 	case "minecraft:waterlily":
 		return []cube.BBox{cube.Box(0, 0, 0, 1, 0.09375, 1)}
 	case "minecraft:soul_sand":
-		return []cube.BBox{cube.Box(0, 0, 0, 1, 7.0/8.0, 1)}
+		return []cube.BBox{cube.Box(0, 0, 0, 1, 7*eighth, 1)}
 	case "minecraft:snow_layer":
 		_, dat := b.EncodeBlock()
 		height, ok := dat["height"]
@@ -85,7 +109,7 @@ func BlockBoxes(b world.Block, pos cube.Pos, src world.BlockSource) []cube.BBox 
 			return []cube.BBox{}
 		}
 
-		blockBBY := float32(height.(int32)) / 8.0
+		blockBBY := float32(height.(int32)) * eighth
 		return []cube.BBox{cube.Box(0, 0, 0, 1, blockBBY, 1)}
 	case "minecraft:redstone_wire":
 		return []cube.BBox{}
@@ -96,22 +120,22 @@ func BlockBoxes(b world.Block, pos cube.Pos, src world.BlockSource) []cube.BBox 
 	case "minecraft:redstone_torch", "minecraft:unlit_redstone_torch":
 		return []cube.BBox{}
 	case "minecraft:repeater", "minecraft:unpowered_repeater", "minecraft:powered_repeater":
-		return []cube.BBox{cube.Box(0, 0, 0, 1, 1.0/8.0, 1)}
+		return []cube.BBox{cube.Box(0, 0, 0, 1, eighth, 1)}
 	case "minecraft:comparator", "minecraft:unpowered_comparator", "minecraft:powered_comparator":
-		return []cube.BBox{cube.Box(0, 0, 0, 1, 1.0/8.0, 1)}
+		return []cube.BBox{cube.Box(0, 0, 0, 1, eighth, 1)}
 	case "minecraft:daylight_detector", "minecraft:daylight_detector_inverted":
-		return []cube.BBox{cube.Box(0, 0, 0, 1, 3.0/8.0, 1)}
+		return []cube.BBox{cube.Box(0, 0, 0, 1, 3*eighth, 1)}
 	case "minecraft:bamboo_sapling", "minecraft:bamboo":
 		return []cube.BBox{cube.Box(0, 0, 0, 1, 1, 1)}
 	case "minecraft:vine", "minecraft:cave_vines", "minecraft:cave_vines_body_with_berries", "minecraft:cave_vines_head_with_berries",
 		"minecraft:twisting_vines", "minecraft:weeping_vines":
 		return []cube.BBox{}
 	case "minecraft:flower_pot":
-		return []cube.BBox{cube.Box(5/16.0, 0, 5/16.0, 11/16.0, 3/8.0, 11/16.0)}
+		return []cube.BBox{cube.Box(5*sixteenth, 0, 5*sixteenth, 11*sixteenth, 3*eighth, 11*sixteenth)}
 	case "minecraft:tallgrass", "minecraft:fern", "minecraft:large_fern", "minecraft:rose_bush", "minecraft:peony", "minecraft:paeonia":
 		return []cube.BBox{}
 	case "minecraft:end_portal_frame":
-		return []cube.BBox{cube.Box(0, 0, 0, 1, 13.0/16.0, 1)}
+		return []cube.BBox{cube.Box(0, 0, 0, 1, 13*sixteenth, 1)}
 	case "minecraft:red_mushroom", "minecraft:brown_mushroom":
 		return []cube.BBox{}
 	case "minecraft:glow_lichen", "minecraft:pink_petals":
@@ -143,6 +167,38 @@ func GetBlocksInRadius(pos protocol.BlockPos, radius int32) []protocol.BlockPos 
 		}
 	}
 	return blocks
+}
+
+// GetNearbyBlockCollisions ...
+func GetNearbyBlockCollisions(aabb cube.BBox, src world.BlockSource) iter.Seq[BlockSearchResult] {
+	return func(yield func(BlockSearchResult) bool) {
+		min, max := aabb.Min(), aabb.Max()
+		minX, minY, minZ := int(math32.Floor(min[0])), int(math32.Floor(min[1])), int(math32.Floor(min[2]))
+		maxX, maxY, maxZ := int(math32.Ceil(max[0])), int(math32.Ceil(max[1])), int(math32.Ceil(max[2]))
+		for y := minY; y <= maxY; y++ {
+			for x := minX; x <= maxX; x++ {
+				for z := minZ; z <= maxZ; z++ {
+					pos := cube.Pos{x, y, z}
+					b := src.Block(df_cube.Pos(pos))
+					if _, isAir := b.(block.Air); isAir {
+						continue
+					}
+
+					// Add the block to the list of block search results.
+					vecPos := pos.Vec3()
+				block_loop:
+					for _, bb := range BlockBoxes(b, pos, src) {
+						if bb.Translate(vecPos).IntersectsWith(aabb) {
+							if !yield(BlockSearchResult{Block: b, Position: pos}) {
+								return
+							}
+							break block_loop
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // GetNearbyBlocks get the blocks that are within a range of the provided bounding box.
@@ -224,6 +280,28 @@ func BlockClimbable(b world.Block) bool {
 	default:
 		return false
 	}
+}
+
+// IsFence returns true if the block is a fence.
+func IsFence(b world.Block) bool {
+	switch b.(type) {
+	case block.WoodFence, block.NetherBrickFence:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsFenceGate returns true if the block is a fence gate
+func IsFenceGate(b world.Block) bool {
+	_, ok := b.(block.WoodFenceGate)
+	return ok
+}
+
+// IsWall returns true if the block is a wall.
+func IsWall(b world.Block) bool {
+	_, ok := b.(block.Wall)
+	return ok
 }
 
 // IsBlockPassInteraction returns true if the block allows interactions although it has a solid

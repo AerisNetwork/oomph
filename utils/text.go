@@ -49,7 +49,8 @@ func InputMode(mode int) string {
 		return "Touch"
 	case packet.InputModeGamePad:
 		return "Gamepad"
+	case 4: // legacy: packet.InputModeMotionController - removed as of 1.21.120
+		return "Motion Controller"
 	}
-
 	return "Unknown"
 }

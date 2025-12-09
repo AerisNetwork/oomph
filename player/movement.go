@@ -60,6 +60,11 @@ type MovementComponent interface {
 	// the movement component.
 	RotationDelta() mgl32.Vec3
 
+	// SupportingBlockPos is the position of the block that the player is standing on/supported by.
+	SupportingBlockPos() *cube.Pos
+	// SetSupportingBlockPos sets the position of the block that the player is standing on/supported by.
+	SetSupportingBlockPos(pos *cube.Pos)
+
 	// Impulse returns the movement impulse of the movement component. The X-axis contains
 	// the forward impulse, and the Y-axis contains the left impulse.
 	Impulse() mgl32.Vec2
@@ -134,11 +139,11 @@ type MovementComponent interface {
 	// TicksSinceTeleport returns the amount of ticks since the last teleport was applied.
 	TicksSinceTeleport() uint64
 
-	// Size returns the width and height of the movement component in a Vec2. The X-axis
-	// contains the width, and the Y-axis contains the height.
-	Size() mgl32.Vec2
+	// Size returns the width, height, and scale of the movement component in a Vec2. The X-axis
+	// contains the width, the Y-axis contains the height, and the Z-axis contains the scale.
+	Size() mgl32.Vec3
 	// SetSize sets the size of the movement component.
-	SetSize(size mgl32.Vec2)
+	SetSize(size mgl32.Vec3)
 	// BoundingBox returns the bounding box of the movement component translated to
 	// it's current position.
 	BoundingBox() cube.BBox

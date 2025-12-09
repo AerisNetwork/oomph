@@ -77,7 +77,7 @@ func (p *Player) HandleClientPacket(ctx *context.HandlePacketContext) {
 	pk := *(ctx.Packet())
 	switch pk := pk.(type) {
 	case *packet.CommandRequest:
-		args := strings.Split(pk.CommandLine, " ")
+		args := splitCommandLine(pk.CommandLine)
 		if len(args) >= 2 && args[0] == "/ac" {
 			subcommand := args[1]
 			args = args[2:]
@@ -141,7 +141,7 @@ func (p *Player) HandleClientPacket(ctx *context.HandlePacketContext) {
 	case *packet.InventoryTransaction:
 		if tr, ok := pk.TransactionData.(*protocol.UseItemOnEntityTransactionData); ok {
 			p.inventory.SetHeldSlot(int32(tr.HotBarSlot))
-			if tr.ActionType == protocol.UseItemOnEntityActionAttack {
+			if tr.ActionType == protocol.UseItemOnEntityActionAttack && (p.GameMode == packet.GameTypeSurvival || p.GameMode == packet.GameTypeAdventure) {
 				// The reason we cancel here is because Oomph also utlizes a full-authoritative system for combat. We need to wait for the
 				// next movement (PlayerAuthInputPacket) the client sends so that we can accurately calculate if the hit is valid.
 				p.Combat().Attack(pk)
@@ -177,8 +177,8 @@ func (p *Player) HandleClientPacket(ctx *context.HandlePacketContext) {
 						p.StartUseConsumableTick = p.InputCount
 						p.consumedSlot = int(tr.HotBarSlot)
 					} else {
-						duration := p.InputCount - p.StartUseConsumableTick
-						if duration < ((c.ConsumeDuration().Milliseconds() / 50) - 1) {
+						duration := (p.InputCount - p.StartUseConsumableTick) * 50
+						if duration < (c.ConsumeDuration().Milliseconds() - 50) {
 							p.StartUseConsumableTick = p.InputCount
 							ctx.Cancel()
 							p.inventory.ForceSync()
@@ -264,6 +264,54 @@ func (p *Player) HandleClientPacket(ctx *context.HandlePacketContext) {
 	p.RunDetections(pk)
 }
 
+// splitCommandLine splits a command line into arguments, preserving quoted substrings
+// as single arguments. Supports both single (”) and double ("") quotes, and escaping
+// characters using backslashes within or outside quotes.
+func splitCommandLine(s string) []string {
+	var (
+		args      []string
+		cur       strings.Builder
+		inQuotes  bool
+		quoteChar rune
+		escaped   bool
+	)
+	for _, r := range s {
+		if escaped {
+			cur.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if inQuotes {
+			if r == quoteChar {
+				inQuotes = false
+				continue
+			}
+			cur.WriteRune(r)
+			continue
+		}
+		switch r {
+		case '"', '\'':
+			inQuotes = true
+			quoteChar = r
+		case ' ', '\t', '\n', '\r':
+			if cur.Len() > 0 {
+				args = append(args, cur.String())
+				cur.Reset()
+			}
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if cur.Len() > 0 {
+		args = append(args, cur.String())
+	}
+	return args
+}
+
 func (p *Player) HandleServerPacket(ctx *context.HandlePacketContext) {
 	defer p.recoverError()
 
@@ -282,6 +330,7 @@ func (p *Player) HandleServerPacket(ctx *context.HandlePacketContext) {
 	case *packet.AddActor:
 		width, height, scale := calculateBBSize(pk.EntityMetadata, 0.6, 1.8, 1.0)
 		p.entTracker.AddEntity(pk.EntityRuntimeID, entity.New(
+			pk.EntityRuntimeID,
 			pk.EntityType,
 			pk.EntityMetadata,
 			pk.Position,
@@ -290,8 +339,10 @@ func (p *Player) HandleServerPacket(ctx *context.HandlePacketContext) {
 			width,
 			height,
 			scale,
+			&p.log,
 		))
 		p.clientEntTracker.AddEntity(pk.EntityRuntimeID, entity.New(
+			pk.EntityRuntimeID,
 			pk.EntityType,
 			pk.EntityMetadata,
 			pk.Position,
@@ -300,10 +351,12 @@ func (p *Player) HandleServerPacket(ctx *context.HandlePacketContext) {
 			width,
 			height,
 			scale,
+			&p.log,
 		))
 	case *packet.AddPlayer:
 		width, height, scale := calculateBBSize(pk.EntityMetadata, 0.6, 1.8, 1.0)
 		p.entTracker.AddEntity(pk.EntityRuntimeID, entity.New(
+			pk.EntityRuntimeID,
 			"",
 			pk.EntityMetadata,
 			pk.Position,
@@ -312,8 +365,10 @@ func (p *Player) HandleServerPacket(ctx *context.HandlePacketContext) {
 			width,
 			height,
 			scale,
+			&p.log,
 		))
 		p.clientEntTracker.AddEntity(pk.EntityRuntimeID, entity.New(
+			pk.EntityRuntimeID,
 			"",
 			pk.EntityMetadata,
 			pk.Position,
@@ -322,6 +377,7 @@ func (p *Player) HandleServerPacket(ctx *context.HandlePacketContext) {
 			width,
 			height,
 			scale,
+			&p.log,
 		))
 	case *packet.ChunkRadiusUpdated:
 		p.worldUpdater.SetServerChunkRadius(pk.ChunkRadius + 4)

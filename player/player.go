@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -44,7 +45,11 @@ const (
 	GameVersion1_21_80  = 800
 	GameVersion1_21_90  = 818
 	GameVersion1_21_93  = 819
-	GameVersion1_21_100 = protocol.CurrentProtocol
+	GameVersion1_21_100 = 827
+	GameVersion1_21_111 = 844
+	GameVersion1_21_120 = 859
+	GameVersion1_21_124 = 860
+	GameVersion1_21_130 = 898
 
 	TicksPerSecond = 20
 )
@@ -428,7 +433,7 @@ func (p *Player) Disconnect(reason string) {
 	p.SendPacketToClient(&packet.Disconnect{
 		Message:         reason,
 		FilteredMessage: reason,
-		Reason:          utils.DisconnectReasonKicked,
+		Reason:          packet.DisconnectReasonKicked,
 	})
 	p.Close()
 }

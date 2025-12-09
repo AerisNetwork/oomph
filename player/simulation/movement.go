@@ -1,6 +1,8 @@
 package simulation
 
 import (
+	"math"
+
 	"github.com/chewxy/math32"
 	"github.com/df-mc/dragonfly/server/block"
 	df_cube "github.com/df-mc/dragonfly/server/block/cube"
@@ -63,8 +65,12 @@ func SimulatePlayerMovement(p *player.Player, movement player.MovementComponent)
 	blockFriction := game.DefaultAirFriction
 	moveRelativeSpeed := movement.AirSpeed()
 	if movement.OnGround() {
+		mSpeed := movement.MovementSpeed()
+		if utils.BlockName(blockUnder) == "minecraft:soul_sand" {
+			mSpeed *= 0.543
+		}
 		blockFriction *= utils.BlockFriction(blockUnder)
-		moveRelativeSpeed = movement.MovementSpeed() * (0.16277136 / (blockFriction * blockFriction * blockFriction))
+		moveRelativeSpeed = mSpeed * (0.16277136 / (blockFriction * blockFriction * blockFriction))
 	}
 
 	if movement.Gliding() {
@@ -86,11 +92,10 @@ func SimulatePlayerMovement(p *player.Player, movement player.MovementComponent)
 		// Apply knockback if applicable.
 		p.Dbg.Notify(player.DebugModeMovementSim, attemptKnockback(movement), "knockback applied: %v", movement.Vel())
 		// Attempt jump velocity if applicable.
-		p.Dbg.Notify(player.DebugModeMovementSim, attemptJump(p, p.Dbg, &clientJumpPrevented), "jump force applied (sprint=%v): %v", movement.Sprinting(), movement.Vel())
-
 		p.Dbg.Notify(player.DebugModeMovementSim, true, "blockUnder=%s, blockFriction=%v, speed=%v", utils.BlockName(blockUnder), blockFriction, moveRelativeSpeed)
 		moveRelative(movement, moveRelativeSpeed)
 		p.Dbg.Notify(player.DebugModeMovementSim, true, "moveRelative force applied (vel=%v)", movement.Vel())
+		p.Dbg.Notify(player.DebugModeMovementSim, attemptJump(p, p.Dbg, &clientJumpPrevented), "jump force applied (sprint=%v): %v", movement.Sprinting(), movement.Vel())
 
 		nearClimbable := utils.BlockClimbable(p.World().Block(df_cube.Pos(cube.PosFromVec3(movement.Pos()))))
 		if nearClimbable {
@@ -138,18 +143,28 @@ func SimulatePlayerMovement(p *player.Player, movement player.MovementComponent)
 
 		oldVel := movement.Vel()
 		oldOnGround := movement.OnGround()
+		oldY := movement.Pos().Y()
 
 		tryCollisions(p, p.World(), p.Dbg, p.VersionInRange(-1, player.GameVersion1_20_60), clientJumpPrevented)
-		walkOnBlock(movement, blockUnder)
-		movement.SetMov(movement.Vel())
-
-		blockUnder = p.World().Block(df_cube.Pos(cube.PosFromVec3(movement.Pos().Sub(mgl32.Vec3{0, 0.2}))))
-		if _, isAir := blockUnder.(block.Air); isAir {
-			b := p.World().Block(df_cube.Pos(cube.PosFromVec3(movement.Pos()).Side(cube.FaceDown)))
-			if oomph_block.IsWall(b) || oomph_block.IsFence(b) {
-				blockUnder = b
+		if supportPos := movement.SupportingBlockPos(); supportPos != nil {
+			blockUnder = p.World().Block([3]int(*supportPos))
+		} else {
+			blockUnder = p.World().Block(df_cube.Pos(cube.PosFromVec3(movement.Pos().Sub(mgl32.Vec3{0, 0.2}))))
+			if _, isAir := blockUnder.(block.Air); isAir {
+				b := p.World().Block(df_cube.Pos(cube.PosFromVec3(movement.Pos()).Side(cube.FaceDown)))
+				if oomph_block.IsWall(b) || oomph_block.IsFence(b) {
+					blockUnder = b
+				}
 			}
 		}
+
+		if oldY == movement.Pos().Y() {
+			walkOnBlock(movement, p.Dbg, blockUnder)
+		} else {
+			p.Dbg.Notify(player.DebugModeMovementSim, true, "NO WALKING ON BLOCK FUCK YOU")
+		}
+
+		movement.SetMov(movement.Vel())
 		setPostCollisionMotion(p, oldVel, oldOnGround, blockUnder)
 
 		if inCobweb {
@@ -235,11 +250,13 @@ func simulateGlide(p *player.Player, movement player.MovementComponent) {
 	p.Dbg.Notify(player.DebugModeMovementSim, true, "(glide) oldVel=%v, collisions=%v diff=%v", oldVel, movement.Vel(), velDiff)
 }
 
-func walkOnBlock(movement player.MovementComponent, blockUnder world.Block) {
+func walkOnBlock(movement player.MovementComponent, dbg *player.Debugger, blockUnder world.Block) {
 	if !movement.OnGround() || movement.Sneaking() {
+		dbg.Notify(player.DebugModeMovementSim, true, "walkOnBlock: conditions not met (onGround=%v sneaking=%v)", movement.OnGround(), movement.Sneaking())
 		return
 	}
 
+	oldVel := movement.Vel()
 	newVel := movement.Vel()
 	switch utils.BlockName(blockUnder) {
 	case "minecraft:slime":
@@ -249,10 +266,8 @@ func walkOnBlock(movement player.MovementComponent, blockUnder world.Block) {
 			newVel[0] *= d1
 			newVel[2] *= d1
 		}
-	case "minecraft:soul_sand":
-		newVel[0] *= 0.3
-		newVel[2] *= 0.3
 	}
+	dbg.Notify(player.DebugModeMovementSim, true, "walkOnBlock: oldVel=%v newVel=%v", oldVel, newVel)
 	movement.SetVel(newVel)
 }
 
@@ -291,6 +306,9 @@ func landOnBlock(movement player.MovementComponent, old mgl32.Vec3, blockUnder w
 	switch utils.BlockName(blockUnder) {
 	case "minecraft:slime":
 		newVel[1] = game.SlimeBounceMultiplier * old.Y()
+		if math32.Abs(newVel[1]) < 1e-4 {
+			newVel[1] = 0.0
+		}
 	case "minecraft:bed":
 		newVel[1] = math32.Min(1.0, game.BedBounceMultiplier*old.Y())
 	default:
@@ -317,6 +335,60 @@ func setPostCollisionMotion(p *player.Player, oldVel mgl32.Vec3, oldOnGround boo
 		newVel[2] = 0
 	}
 	movement.SetVel(newVel)
+}
+
+func isJumpBlocked(p *player.Player, jumpVel mgl32.Vec3) bool {
+	movement := p.Movement()
+	collisionBB := movement.BoundingBox()
+	bbList := utils.GetNearbyBBoxes(collisionBB.Extend(jumpVel), p.World())
+
+	yVel := mgl32.Vec3{0, jumpVel.Y()}
+	xVel := mgl32.Vec3{jumpVel.X()}
+	zVel := mgl32.Vec3{0, 0, jumpVel.Z()}
+
+	for index := len(bbList) - 1; index >= 0; index-- {
+		blockBox := bbList[index]
+		yVel = game.BBClipCollide(blockBox, collisionBB, yVel, false, nil)
+	}
+	collisionBB = collisionBB.Translate(yVel)
+
+	for index := len(bbList) - 1; index >= 0; index-- {
+		blockBox := bbList[index]
+		xVel = game.BBClipCollide(blockBox, collisionBB, xVel, false, nil)
+	}
+	collisionBB = collisionBB.Translate(xVel)
+
+	for index := len(bbList) - 1; index >= 0; index-- {
+		blockBox := bbList[index]
+		zVel = game.BBClipCollide(blockBox, collisionBB, zVel, false, nil)
+	}
+	initalBlockCond := ((xVel[0] != jumpVel[0]) || (zVel[2] != jumpVel[2])) && yVel[1] == jumpVel[1]
+	if !initalBlockCond {
+		return false
+	}
+
+	xVel = mgl32.Vec3{jumpVel.X()}
+	yVel = mgl32.Vec3{0, jumpVel.Y()}
+	zVel = mgl32.Vec3{0, 0, jumpVel.Z()}
+	collisionBB = movement.BoundingBox()
+
+	for index := len(bbList) - 1; index >= 0; index-- {
+		blockBox := bbList[index]
+		xVel = game.BBClipCollide(blockBox, collisionBB, xVel, false, nil)
+	}
+	collisionBB = collisionBB.Translate(xVel)
+
+	for index := len(bbList) - 1; index >= 0; index-- {
+		blockBox := bbList[index]
+		zVel = game.BBClipCollide(blockBox, collisionBB, zVel, false, nil)
+	}
+	collisionBB = collisionBB.Translate(zVel)
+
+	for index := len(bbList) - 1; index >= 0; index-- {
+		blockBox := bbList[index]
+		yVel = game.BBClipCollide(blockBox, collisionBB, yVel, false, nil)
+	}
+	return yVel[1] != jumpVel[1] && xVel[0] == jumpVel[0] && zVel[2] == jumpVel[2]
 }
 
 func tryCollisions(p *player.Player, src world.BlockSource, dbg *player.Debugger, useSlideOffset bool, clientJumpPrevented bool) {
@@ -483,6 +555,7 @@ func tryCollisions(p *player.Player, src world.BlockSource, dbg *player.Debugger
 	// Unlike Java, bedrock seems to have a strange condition for the client to be considered on the ground. This is probably useful
 	// in cases where the client is teleporting, and the velocity (0) would still be equal to the previous velocity.
 	movement.SetOnGround((yCollision && currVel.Y() < 0) || (movement.OnGround() && !yCollision && math32.Abs(currVel.Y()) <= 1e-5))
+	checkSupportingBlockPos(movement, src, currVel)
 	movement.SetVel(collisionVel)
 
 	dbg.Notify(player.DebugModeMovementSim, true, "clientVel=%v clientPos=%v", movement.Client().Mov(), movement.Client().Pos())
@@ -624,19 +697,11 @@ func attemptJump(p *player.Player, dbg *player.Debugger, clientJumpPrevented *bo
 		newVel[2] += game.MCCos(force) * 0.2
 	}
 
-	// FIXME: The client seems to sometimes prevent it's own jump from happening - it is unclear how it is determined, however.
-	// This is a temporary hack to get around this issue for now.
-	clientJump := movement.Client().Pos().Y() - movement.Client().LastPos().Y()
-	hasBlockAbove := false
-	jumpBB := movement.BoundingBox().Translate(newVel)
-	for _, bb := range utils.GetNearbyBBoxes(jumpBB, p.World()) {
-		if bb.Min().Y() > jumpBB.Min().Y() {
-			hasBlockAbove = true
-			break
-		}
-	}
-	if hasBlockAbove && math32.Abs(clientJump) <= 1e-4 && !movement.HasKnockback() && !movement.HasTeleport() && clientJumpPrevented != nil {
+	// TODO: There is probably a more efficient/proper way the bedrock client handles blocking it's own jump, but this
+	// is functional for now.
+	if clientJumpPrevented != nil && !movement.HasKnockback() && !movement.HasTeleport() && isJumpBlocked(p, newVel) {
 		*clientJumpPrevented = true
+		p.Dbg.Notify(player.DebugModeMovementSim, true, "jump determined to be blocked")
 	}
 
 	movement.SetVel(newVel)
@@ -666,4 +731,32 @@ func attemptTeleport(p *player.Player, dbg *player.Debugger) bool {
 		return remaining > 1
 	}
 	return false
+}
+
+func findSupportingBlock(movement player.MovementComponent, bb cube.BBox, w world.BlockSource) {
+	var (
+		blockPos  *cube.Pos
+		minDist   = float32(math.MaxFloat32 - 1)
+		centerPos = cube.PosFromVec3(movement.Pos()).Vec3().Add(mgl32.Vec3{0.5, 0.5, 0.5})
+	)
+	for result := range utils.GetNearbyBlockCollisions(bb, w) {
+		if dist := result.Position.Vec3().Sub(centerPos).LenSqr(); dist < minDist {
+			minDist = dist
+			blockPos = &result.Position
+		}
+	}
+	movement.SetSupportingBlockPos(blockPos)
+}
+
+func checkSupportingBlockPos(movement player.MovementComponent, src world.BlockSource, vel mgl32.Vec3) {
+	if !movement.OnGround() {
+		movement.SetSupportingBlockPos(nil)
+		return
+	}
+	decBB := movement.BoundingBox().ExtendTowards(cube.FaceDown, 1e-3) //.GrowVec3(mgl32.Vec3{0.025, 0, 0.025})
+	findSupportingBlock(movement, decBB, src)
+	if movement.SupportingBlockPos() == nil {
+		decBB = decBB.Translate(mgl32.Vec3{-vel[0], 0, -vel[2]})
+		findSupportingBlock(movement, decBB, src)
+	}
 }

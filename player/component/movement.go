@@ -5,6 +5,7 @@ import (
 
 	"github.com/ethaniccc/float32-cube/cube"
 	"github.com/go-gl/mathgl/mgl32"
+	"github.com/oomph-ac/oomph/entity"
 	"github.com/oomph-ac/oomph/game"
 	"github.com/oomph-ac/oomph/player"
 	"github.com/oomph-ac/oomph/player/component/acknowledgement"
@@ -80,7 +81,9 @@ type AuthoritativeMovementComponent struct {
 
 	slideOffset mgl32.Vec2
 	impulse     mgl32.Vec2
-	size        mgl32.Vec2
+	size        mgl32.Vec3
+
+	supportingBlockPos *cube.Pos
 
 	gravity      float32
 	jumpHeight   float32
@@ -271,6 +274,16 @@ func (mc *AuthoritativeMovementComponent) RotationDelta() mgl32.Vec3 {
 	return mc.rotation.Sub(mc.lastRotation)
 }
 
+// SupportingBlockPos returns the position of the block that the player is standing on/supported by.
+func (mc *AuthoritativeMovementComponent) SupportingBlockPos() *cube.Pos {
+	return mc.supportingBlockPos
+}
+
+// SetSupportingBlockPos sets the position of the block that the player is standing on/supported by.
+func (mc *AuthoritativeMovementComponent) SetSupportingBlockPos(pos *cube.Pos) {
+	mc.supportingBlockPos = pos
+}
+
 // Impulse returns the movement impulse of the movement component. The X-axis contains the forward impulse, and the Y-axis contains the left impulse.
 func (mc *AuthoritativeMovementComponent) Impulse() mgl32.Vec2 {
 	return mc.impulse
@@ -438,18 +451,20 @@ func (mc *AuthoritativeMovementComponent) TicksSinceTeleport() uint64 {
 
 // Size returns the width and height of the movement component in a Vec2. The X-axis
 // contains the width, and the Y-axis contains the height.
-func (mc *AuthoritativeMovementComponent) Size() mgl32.Vec2 {
+func (mc *AuthoritativeMovementComponent) Size() mgl32.Vec3 {
 	return mc.size
 }
 
 // SetSize sets the size of the movement component.
-func (mc *AuthoritativeMovementComponent) SetSize(newSize mgl32.Vec2) {
+func (mc *AuthoritativeMovementComponent) SetSize(newSize mgl32.Vec3) {
 	mc.size = newSize
 }
 
 // BoundingBox returns the bounding box of the movement component translated to it's current position.
 func (mc *AuthoritativeMovementComponent) BoundingBox() cube.BBox {
-	width := mc.size[0] / 2
+	scale := mc.size[2]
+	width := (mc.size[0] * 0.5) * scale
+	height := mc.size[1] * scale
 	var yOffset float32
 	if mc.mPlayer.VersionInRange(-1, player.GameVersion1_20_60) {
 		yOffset = mc.slideOffset.Y()
@@ -457,12 +472,12 @@ func (mc *AuthoritativeMovementComponent) BoundingBox() cube.BBox {
 
 	return cube.Box(
 		mc.pos[0]-width,
-		mc.pos[1]+yOffset,
+		(mc.pos[1] + yOffset),
 		mc.pos[2]-width,
 		mc.pos[0]+width,
-		mc.pos[1]+mc.size[1]+yOffset,
+		mc.pos[1]+height+yOffset,
 		mc.pos[2]+width,
-	).GrowVec3(mgl32.Vec3{-1e-4, 0, -1e-4})
+	).GrowVec3(mgl32.Vec3{-1e-3, 0, -1e-3})
 }
 
 // ClientBoundingBox returns the bounding box of the movement component translated to the client's position.
@@ -764,15 +779,25 @@ func (mc *AuthoritativeMovementComponent) Update(pk *packet.PlayerAuthInput) {
 		mc.sneaking = pk.InputData.Load(packet.InputFlagSneakDown)
 	}
 
+	mc.mPlayer.Dbg.Notify(
+		player.DebugModeMovementSim,
+		true,
+		"rawMoveVector=%v",
+		pk.MoveVector,
+	)
+
+	maxImpulse := float32(1.0)
+	/* if pk.MoveVector[0] != 0 && pk.MoveVector[1] != 0 {
+		maxImpulse = game.MaxNormalizedImpulse
+	} */
 	if mc.mPlayer.StartUseConsumableTick != 0 {
-		baseConsumeSpeed := float32(0.3)
-		if mc.sneaking {
-			baseConsumeSpeed *= 0.3
-		}
-		pk.MoveVector[0] = game.ClampFloat(pk.MoveVector[0], -baseConsumeSpeed, baseConsumeSpeed)
-		pk.MoveVector[1] = game.ClampFloat(pk.MoveVector[1], -baseConsumeSpeed, baseConsumeSpeed)
-		//mc.mPlayer.Message("consuming (curr=%d start=%d)", mc.mPlayer.InputCount, mc.mPlayer.StartUseConsumableTick)
+		maxImpulse *= game.MaxConsumingImpulse
 	}
+	if mc.sneaking {
+		maxImpulse *= game.MaxSneakImpulse
+	}
+	pk.MoveVector[0] = game.ClampFloat(pk.MoveVector[0], -maxImpulse, maxImpulse)
+	pk.MoveVector[1] = game.ClampFloat(pk.MoveVector[1], -maxImpulse, maxImpulse)
 
 	mc.jumping = pk.InputData.Load(packet.InputFlagStartJumping)
 	mc.pressingJump = pk.InputData.Load(packet.InputFlagJumping)
@@ -908,6 +933,16 @@ func (mc *AuthoritativeMovementComponent) Reset() {
 	if mc.flying {
 		mc.onGround = false
 	}
+
+	if mc.mPlayer.Opts().Movement.LimitAllVelocity {
+		limitThreshold := mc.mPlayer.Opts().Movement.LimitAllVelocityThreshold
+		if limitThreshold < 0 {
+			limitThreshold = -limitThreshold
+		}
+		mc.vel[0] = game.ClampFloat(mc.vel[0], -limitThreshold, limitThreshold)
+		mc.vel[1] = game.ClampFloat(mc.vel[1], -limitThreshold, limitThreshold)
+		mc.vel[2] = game.ClampFloat(mc.vel[2], -limitThreshold, limitThreshold)
+	}
 }
 
 // PendingCorrections returns the number of pending corrections the movement component has.
@@ -954,7 +989,7 @@ func (mc *AuthoritativeMovementComponent) Sync() {
 
 	if !mc.mPlayer.PendingCorrectionACK {
 		// Make sure all of the player's actor data is up-to-date with Oomph's prediction.
-		/* actorData := mc.mPlayer.LastSetActorData
+		actorData := mc.mPlayer.LastSetActorData
 		actorData.Tick = mc.mPlayer.SimulationFrame
 		if f, ok := actorData.EntityMetadata[entity.DataKeyFlags]; ok {
 			flags := f.(int64)
@@ -975,7 +1010,8 @@ func (mc *AuthoritativeMovementComponent) Sync() {
 			}
 			actorData.EntityMetadata[entity.DataKeyFlags] = flags
 		}
-		mc.mPlayer.SendPacketToClient(actorData) */
+		mc.mPlayer.SendPacketToClient(actorData)
+
 		// Send the actual movement correction to the client.
 		mc.mPlayer.SendPacketToClient(&packet.CorrectPlayerMovePrediction{
 			PredictionType: packet.PredictionTypePlayer,
