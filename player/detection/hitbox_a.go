@@ -51,7 +51,11 @@ func (d *HitboxA) Detect(pk packet.Packet) {
 	}
 	switch pk := pk.(type) {
 	case *packet.Interact:
-		if pk.ActionType != packet.InteractActionMouseOverEntity || pk.Position == utils.EmptyVec32 {
+		position, exists := pk.Position.Value()
+		if !exists {
+			return
+		}
+		if pk.ActionType != packet.InteractActionMouseOverEntity || position == utils.EmptyVec32 {
 			//d.mPlayer.Message("%d %v", pk.ActionType, pk.Position)
 			return
 		}
@@ -62,8 +66,8 @@ func (d *HitboxA) Detect(pk packet.Packet) {
 		h1 := e.Box(e.PrevPosition).Grow(0.1)
 		h2 := e.Box(e.Position).Grow(0.1)
 		dist := math32.Min(
-			pk.Position.Sub(game.ClosestPointToBBox(pk.Position, h1)).Len(),
-			pk.Position.Sub(game.ClosestPointToBBox(pk.Position, h2)).Len(),
+			position.Sub(game.ClosestPointToBBox(position, h1)).Len(),
+			position.Sub(game.ClosestPointToBBox(position, h2)).Len(),
 		)
 		if dist > 0.004 {
 			d.mPlayer.FailDetection(d, "amt", game.Round32(0.6+(dist*2), 3))

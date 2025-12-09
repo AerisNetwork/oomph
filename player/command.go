@@ -26,9 +26,9 @@ func (p *Player) initOomphCommand(pk *packet.AvailableCommands) {
 		Name:                     oconfig.Global.CommandName,
 		Description:              oconfig.Global.CommandDescription,
 		Flags:                    0,
-		PermissionLevel:          0,
+		PermissionLevel:          protocol.CommandPermissionLevelAny,
 		AliasesOffset:            ^uint32(0), // MaxUint32 (no aliases)
-		ChainedSubcommandOffsets: []uint16{},
+		ChainedSubcommandOffsets: []uint32{},
 		Overloads:                overloads,
 	})
 }
