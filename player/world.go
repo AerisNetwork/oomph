@@ -116,7 +116,7 @@ func (p *Player) PlaceBlock(clickedBlockPos, replaceBlockPos df_cube.Pos, face d
 	}
 
 	// Make a list of BBoxes the block will occupy.
-	boxes := utils.BlockBoxes(b, cube.Pos(replaceBlockPos), p.World())
+	boxes := utils.BlockCollisions(b, cube.Pos(replaceBlockPos), p.World())
 	for index, blockBox := range boxes {
 		boxes[index] = blockBox.Translate(cube.Pos(replaceBlockPos).Vec3())
 	}
@@ -322,6 +322,11 @@ func (p *Player) blockInteractable(blockPos cube.Pos, interactFace cube.Face) bo
 	currPos := cube.PosFromVec3(p.Movement().Pos().Add(mgl32.Vec3{0, game.DefaultPlayerHeightOffset, 0}))
 	blockX, blockY, blockZ := blockPos[0], blockPos[1], blockPos[2]
 
+	// If the player's head is inside the block they are breaking, allow them to break it.
+	if prevPos[1] == blockY || currPos[1] == blockY {
+		return true
+	}
+
 	belowBlock := currPos[1] < blockY || prevPos[1] < blockY
 	aboveBlock := currPos[1] > blockY || prevPos[1] > blockY
 	if belowBlock {
@@ -350,7 +355,7 @@ func (p *Player) blockInteractable(blockPos cube.Pos, interactFace cube.Face) bo
 	// Check if there is a full obstructing block in the way of the face. If so, the player should not be able to break the block.
 	sidePos := blockPos.Side(interactFace)
 	sideBlock := p.World().Block([3]int(sidePos))
-	sideBBs := utils.BlockBoxes(sideBlock, sidePos, p.World())
+	sideBBs := utils.BlockCollisions(sideBlock, sidePos, p.World())
 	// There are no bounding boxes in the way of this face.
 	if len(sideBBs) == 0 {
 		return true
@@ -395,7 +400,7 @@ func (p *Player) tryRaycastToBlock(blockPos cube.Pos) bool {
 			continue
 		}
 		intersectingBlock := p.World().Block([3]int(flooredPos))
-		for _, intersectingBlockBB := range utils.BlockBoxes(intersectingBlock, flooredPos, p.World()) {
+		for _, intersectingBlockBB := range utils.BlockCollisions(intersectingBlock, flooredPos, p.World()) {
 			intersectingBlockBB = intersectingBlockBB.Translate(intersectingBlockPos)
 			if _, ok := trace.BBoxIntercept(intersectingBlockBB, raycastStart, raycastEnd); ok {
 				return false
@@ -471,6 +476,11 @@ func (p *Player) expectedBlockBreakTime(pos protocol.BlockPos) float32 {
 	}
 
 	breakTime := float32(block.BreakDuration(b, held).Milliseconds())
+	// On versions below 1.21.50, the block break time for wool is shorter by ~25% See https://github.com/oomph-ac/oomph/issues/107
+	if _, isWool := b.(block.Wool); isWool && p.Version < GameVersion1_21_50 {
+		breakTime *= 0.75
+	}
+
 	/* if !p.movement.OnGround() {
 		breakTime *= 5
 	} */

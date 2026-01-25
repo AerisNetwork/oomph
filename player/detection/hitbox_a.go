@@ -4,7 +4,6 @@ import (
 	"github.com/chewxy/math32"
 	"github.com/oomph-ac/oomph/game"
 	"github.com/oomph-ac/oomph/player"
-	"github.com/oomph-ac/oomph/utils"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
 
@@ -51,11 +50,8 @@ func (d *HitboxA) Detect(pk packet.Packet) {
 	}
 	switch pk := pk.(type) {
 	case *packet.Interact:
-		position, exists := pk.Position.Value()
-		if !exists {
-			return
-		}
-		if pk.ActionType != packet.InteractActionMouseOverEntity || position == utils.EmptyVec32 {
+		interactPos, ok := pk.Position.Value()
+		if pk.ActionType != packet.InteractActionMouseOverEntity || !ok {
 			//d.mPlayer.Message("%d %v", pk.ActionType, pk.Position)
 			return
 		}
@@ -66,8 +62,8 @@ func (d *HitboxA) Detect(pk packet.Packet) {
 		h1 := e.Box(e.PrevPosition).Grow(0.1)
 		h2 := e.Box(e.Position).Grow(0.1)
 		dist := math32.Min(
-			position.Sub(game.ClosestPointToBBox(position, h1)).Len(),
-			position.Sub(game.ClosestPointToBBox(position, h2)).Len(),
+			interactPos.Sub(game.ClosestPointToBBox(interactPos, h1)).Len(),
+			interactPos.Sub(game.ClosestPointToBBox(interactPos, h2)).Len(),
 		)
 		if dist > 0.004 {
 			d.mPlayer.FailDetection(d, "amt", game.Round32(0.6+(dist*2), 3))
