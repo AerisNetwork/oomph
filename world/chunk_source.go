@@ -6,6 +6,7 @@ import (
 	_ "unsafe"
 
 	"github.com/df-mc/dragonfly/server/world/chunk"
+	"github.com/sandertv/gophertunnel/minecraft"
 )
 
 // ChunkSource is an interface that returns block information like a regular chunk.
@@ -17,4 +18,4 @@ type ChunkSource interface {
 // noinspection ALL
 //
 //go:linkname decodeSubChunk github.com/df-mc/dragonfly/server/world/chunk.decodeSubChunk
-func decodeSubChunk(buf *bytes.Buffer, c *chunk.Chunk, index *byte, e chunk.Encoding) (*chunk.SubChunk, error)
+func decodeSubChunk(buf *bytes.Buffer, c *chunk.Chunk, index *byte, e chunk.Encoding, enc minecraft.ChunkEncoder) (*chunk.SubChunk, error)

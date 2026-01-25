@@ -60,7 +60,7 @@ func CacheSubChunk(payload *bytes.Buffer, c *chunk.Chunk, pos protocol.ChunkPos)
 	}
 
 	var index byte
-	decodedSC, err := decodeSubChunk(payload, c, &index, chunk.NetworkEncoding)
+	decodedSC, err := decodeSubChunk(payload, c, &index, chunk.NetworkEncoding, minecraft.NopChunkEncoder{})
 	if err != nil {
 		return nil, err
 	}
